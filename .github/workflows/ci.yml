@@ -7,24 +7,22 @@ on:
       - master
 
 jobs:
+
   ci-pass:
     name: CI is green
     runs-on: ubuntu-latest
     needs:
       - style
-      - nightly
+      - build
     steps:
       - run: exit 0
 
   style:
-    name: Check Style
-
+    name: style
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v1
-
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
@@ -32,39 +30,37 @@ jobs:
           components: rustfmt
           profile: minimal
           override: true
-
+      - name: cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
       - name: cargo fmt -- --check
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: -- --check
-
       - name: temporary workaround - fmt all files under src
-        # Workaround for rust-lang/cargo#7732
         run: cargo fmt -- --check $(find . -name '*.rs' -print)
 
-  nightly:
-    name: linux / nightly
+  build:
+    name: build
+    strategy:
+      matrix:
+        config:
+          - host: ubuntu-latest
+          - host: windows-latest
+          - host: macos-latest
     needs: [style]
-
-    runs-on: ubuntu-latest
-
+    runs-on: ${{ matrix.config.host }}
     steps:
       - name: Checkout
         uses: actions/checkout@v1
-
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           profile: minimal
           override: true
-
-      - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-
       - name: Build
         uses: actions-rs/cargo@v1
         with:
