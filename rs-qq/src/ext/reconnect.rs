@@ -2,10 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use tokio::net::TcpStream;
 
-use rq_engine::command::wtlogin::LoginResponse;
+use crate::engine::command::wtlogin::LoginResponse;
 
 use crate::ext::common::after_login;
 use crate::{Client, RQError, RQResult};
@@ -59,7 +58,7 @@ pub async fn auto_reconnect<C: Connector + Sync>(
     }
 }
 
-pub struct Token(pub Bytes);
+pub struct Token(pub crate::engine::Token);
 pub struct Password {
     pub uin: i64,
     pub password: String,
@@ -80,7 +79,10 @@ pub trait FastLogin {
 #[async_trait]
 impl FastLogin for Token {
     async fn fast_login(&self, client: &Arc<Client>) -> RQResult<()> {
-        client.token_login(self.0.clone()).await
+        match client.token_login(self.0.clone()).await? {
+            LoginResponse::Success(_) => Ok(()),
+            _ => Err(RQError::Other("failed to token_login".into())),
+        }
     }
 }
 

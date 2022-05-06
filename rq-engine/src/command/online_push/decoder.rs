@@ -48,6 +48,24 @@ impl super::super::super::Engine {
                 .ok_or_else(|| RQError::Decode("group_info is none".into()))?
                 .group_code
                 .ok_or_else(|| RQError::Decode("group_info.group_code is none".into()))?,
+            group_name: String::from_utf8_lossy(
+                head.group_info
+                    .as_ref()
+                    .ok_or_else(|| RQError::Decode("group_info is none".into()))?
+                    .group_name
+                    .as_ref()
+                    .ok_or_else(|| RQError::Decode("group_info.group_name is none".into()))?,
+            )
+            .to_string(),
+            group_card: String::from_utf8_lossy(
+                head.group_info
+                    .as_ref()
+                    .ok_or_else(|| RQError::Decode("group_info is none".into()))?
+                    .group_card
+                    .as_ref()
+                    .ok_or_else(|| RQError::Decode("group_info.group_card is none".into()))?,
+            )
+            .to_string(),
             from_uin: head
                 .from_uin
                 .ok_or_else(|| RQError::Decode("from_uin is none".into()))?,
@@ -105,9 +123,9 @@ impl super::super::super::Engine {
             Some(34) => {
                 data.get_i32();
                 data.get_u8();
-                let target = data.get_i32() as i64;
+                let target = data.get_u32() as i64;
                 let typ = data.get_u8() as i32;
-                let operator = data.get_i32() as i64;
+                let operator = data.get_u32() as i64;
                 match typ {
                     0x02 | 0x82 => {
                         return Ok(OnlinePushTrans {

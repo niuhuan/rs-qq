@@ -15,13 +15,18 @@ use rs_qq::ext::common::after_login;
 use rs_qq::version::{get_version, Protocol};
 use rs_qq::{LoginResponse, QRCodeConfirmed, QRCodeImageFetch, QRCodeState};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
-                .without_time(),
+                .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
+                    time::UtcOffset::__from_hms_unchecked(8, 0, 0),
+                    time::macros::format_description!(
+                        "[year repr:last_two]-[month]-[day] [hour]:[minute]:[second]"
+                    ),
+                )),
         )
         .with(
             tracing_subscriber::filter::Targets::new()
@@ -155,7 +160,7 @@ async fn main() -> Result<()> {
             .expect("failed to reload friend list");
         tracing::info!("{:?}", client.friends.read().await);
         client
-            .reload_groups()
+            .reload_groups(50)
             .await
             .expect("failed to reload group list");
         tracing::info!("{:?}", client.groups.read().await);

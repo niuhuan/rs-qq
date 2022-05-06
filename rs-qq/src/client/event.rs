@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
-use rq_engine::command::profile_service::{JoinGroupRequest, NewFriendRequest, SelfInvited};
-use rq_engine::structs::{
-    DeleteFriend, FriendInfo, FriendMessageRecall, FriendPoke, GroupLeave, GroupMessageRecall,
-    GroupMute, GroupNameUpdate, MemberPermissionChange, NewMember, TempMessage,
+use crate::engine::command::profile_service::{JoinGroupRequest, NewFriendRequest, SelfInvited};
+use crate::engine::structs::{
+    DeleteFriend, FriendAudioMessage, FriendInfo, FriendMessageRecall, FriendPoke,
+    GroupAudioMessage, GroupLeave, GroupMessageRecall, GroupMute, GroupNameUpdate,
+    MemberPermissionChange, NewMember, TempMessage,
 };
-use rq_engine::RQResult;
+use crate::engine::{jce, RQResult};
 
-use crate::structs::{Group, GroupMemberInfo, GroupMessage, PrivateMessage};
+use crate::structs::{FriendMessage, Group, GroupMemberInfo, GroupMessage};
 use crate::Client;
 
 #[derive(Clone, derivative::Derivative)]
@@ -47,10 +48,16 @@ impl GroupMessageEvent {
 
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
-pub struct PrivateMessageEvent {
+pub struct FriendMessageEvent {
     #[derivative(Debug = "ignore")]
     pub client: Arc<Client>,
-    pub message: PrivateMessage,
+    pub message: FriendMessage,
+}
+
+impl FriendMessageEvent {
+    pub async fn friend(&self) -> Option<Arc<FriendInfo>> {
+        self.client.find_friend(self.message.from_uin).await
+    }
 }
 
 #[derive(Clone, derivative::Derivative)]
@@ -227,4 +234,52 @@ pub struct SelfInvitedEvent {
     #[derivative(Debug = "ignore")]
     pub client: Arc<Client>,
     pub request: SelfInvited,
+}
+
+#[derive(Clone, derivative::Derivative)]
+#[derivative(Debug)]
+pub struct GroupAudioMessageEvent {
+    #[derivative(Debug = "ignore")]
+    pub client: Arc<Client>,
+    pub message: GroupAudioMessage,
+}
+
+impl GroupAudioMessageEvent {
+    pub async fn url(&self) -> RQResult<String> {
+        self.client
+            .get_group_audio_url(self.message.group_code, self.message.audio.clone())
+            .await
+    }
+}
+
+#[derive(Clone, derivative::Derivative)]
+#[derivative(Debug)]
+pub struct FriendAudioMessageEvent {
+    #[derivative(Debug = "ignore")]
+    pub client: Arc<Client>,
+    pub message: FriendAudioMessage,
+}
+
+impl FriendAudioMessageEvent {
+    pub async fn url(&self) -> RQResult<String> {
+        self.client
+            .get_friend_audio_url(self.message.from_uin, self.message.audio.clone())
+            .await
+    }
+}
+
+#[derive(Clone, derivative::Derivative)]
+#[derivative(Debug)]
+pub struct KickedOfflineEvent {
+    #[derivative(Debug = "ignore")]
+    pub client: Arc<Client>,
+    pub offline: jce::RequestPushForceOffline,
+}
+
+#[derive(Clone, derivative::Derivative)]
+#[derivative(Debug)]
+pub struct MSFOfflineEvent {
+    #[derivative(Debug = "ignore")]
+    pub client: Arc<Client>,
+    pub offline: jce::RequestMSFForceOffline,
 }

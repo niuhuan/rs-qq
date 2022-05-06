@@ -1,8 +1,10 @@
 use bytes::Bytes;
 
+pub use crate::command::multi_msg::{ForwardMessage, ForwardNode, MessageNode};
 pub use crate::command::oidb_svc::ProfileDetailUpdate;
-use crate::jce;
+pub use crate::command::stat_svc::{CustomOnlineStatus, ExtOnlineStatus, OnlineStatus, Status};
 use crate::msg::MessageChain;
+use crate::{jce, pb};
 
 #[derive(Default, Debug)]
 pub struct AccountInfo {
@@ -108,7 +110,7 @@ pub struct SummaryCardInfo {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct PrivateMessage {
+pub struct FriendMessage {
     pub seqs: Vec<i32>,
     pub rands: Vec<i32>,
     pub target: i64,
@@ -123,6 +125,8 @@ pub struct GroupMessage {
     pub seqs: Vec<i32>,
     pub rands: Vec<i32>,
     pub group_code: i64,
+    pub group_name: String,
+    pub group_card: String,
     pub from_uin: i64,
     pub time: i32,
     pub elements: MessageChain,
@@ -211,32 +215,31 @@ pub struct MessageReceipt {
     pub time: i64,
 }
 
-#[derive(Copy, Clone)]
-pub enum UserOnlineStatus {
-    Online = 11,          // 在线
-    Offline = 21,         // 离线
-    Away = 31,            // 离开
-    Invisible = 41,       // 隐身
-    Busy = 50,            // 忙
-    Qme = 60,             // Q我吧
-    Dnd = 70,             // 请勿打扰
-    Battery = 1000,       // 当前电量
-    Listening = 1028,     // 听歌中
-    Constellation = 1040, // 星座运势
-    Weather = 1030,       // 今日天气
-    MeetSpring = 1069,    // 遇见春天
-    Timi = 1027,          // Timi中
-    EatChicken = 1064,    // 吃鸡中
-    Loving = 1051,        // 恋爱中
-    WangWang = 1053,      // 汪汪汪
-    CookedRice = 1019,    // 干饭中
-    Study = 1018,         // 学习中
-    StayUp = 1032,        // 熬夜中
-    PlayBall = 1050,      // 打球中
-    Signal = 1011,        // 信号弱
-    StudyOnline = 1024,   // 在线学习
-    Gaming = 1017,        // 游戏中
-    Vacationing = 1022,   // 度假中
-    WatchingTV = 1021,    // 追剧中
-    Fitness = 1020,       // 健身中
+#[derive(Debug, Clone, Default)]
+pub struct GroupAudio(pub pb::msg::Ptt);
+
+#[derive(Debug, Clone, Default)]
+pub struct GroupAudioMessage {
+    pub seqs: Vec<i32>,
+    pub rands: Vec<i32>,
+    pub group_code: i64,
+    pub group_name: String,
+    pub group_card: String,
+    pub from_uin: i64,
+    pub time: i32,
+    pub audio: GroupAudio,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FriendAudio(pub pb::msg::Ptt);
+
+#[derive(Debug, Clone, Default)]
+pub struct FriendAudioMessage {
+    pub seqs: Vec<i32>,
+    pub rands: Vec<i32>,
+    pub target: i64,
+    pub time: i32,
+    pub from_uin: i64,
+    pub from_nick: String,
+    pub audio: FriendAudio,
 }

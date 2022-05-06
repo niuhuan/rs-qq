@@ -38,7 +38,7 @@ impl From<msg::LightApp> for LightApp {
                 let mut uncompressed = Vec::new();
                 ZlibDecoder::new(&data[1..])
                     .read_to_end(&mut uncompressed)
-                    .unwrap();
+                    .ok();
                 uncompressed
             };
             if !content.is_empty() && content.len() < 1024 ^ 3 {

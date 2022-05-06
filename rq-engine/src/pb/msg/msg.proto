@@ -426,14 +426,14 @@ message OnlineImage {
 
 message NotOnlineImage {
   optional string filePath = 1;
-  optional int32 fileLen = 2;
+  optional uint32 fileLen = 2;
   optional string downloadPath = 3;
   optional bytes oldVerSendFile = 4;
   optional int32 imgType = 5;
   optional bytes previewsImage = 6;
   optional bytes picMd5 = 7;
-  optional int32 picHeight = 8;
-  optional int32 picWidth = 9;
+  optional uint32 picHeight = 8;
+  optional uint32 picWidth = 9;
   optional string resId = 10;
   optional bytes flag = 11;
   optional string thumbUrl = 12;
@@ -578,8 +578,8 @@ message CustomFace {
   optional bytes flag = 5;
   optional bytes oldData = 6;
   optional int32 fileId = 7;
-  optional int32 serverIp = 8;
-  optional int32 serverPort = 9;
+  optional uint32 serverIp = 8;
+  optional uint32 serverPort = 9;
   optional int32 fileType = 10;
   optional bytes signature = 11;
   optional int32 useful = 12;
@@ -592,10 +592,10 @@ message CustomFace {
   optional int32 repeatImage = 19;
   optional int32 imageType = 20;
   optional int32 index = 21;
-  optional int32 width = 22;
-  optional int32 height = 23;
+  optional uint32 width = 22;
+  optional uint32 height = 23;
   optional int32 source = 24;
-  optional int32 size = 25;
+  optional uint32 size = 25;
   optional int32 origin = 26;
   optional int32 thumbWidth = 27;
   optional int32 thumbHeight = 28;
@@ -649,7 +649,7 @@ message GroupInfo {
   optional int64 groupCode = 1;
   optional int32 groupType = 2;
   optional int64 groupInfoSeq = 3;
-  optional string groupCard = 4;
+  optional bytes groupCard = 4;
   optional bytes groupRank = 5;
   optional int32 groupLevel = 6;
   optional int32 groupCardType = 7;

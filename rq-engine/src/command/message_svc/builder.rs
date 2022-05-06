@@ -11,6 +11,7 @@ impl super::super::super::Engine {
         &self,
         group_code: i64,
         elems: Vec<pb::msg::Elem>,
+        ptt: Option<pb::msg::Ptt>,
         ran: i32,
         time: i64,
         pkg_num: i32,
@@ -35,6 +36,7 @@ impl super::super::super::Engine {
             msg_body: Some(pb::msg::MessageBody {
                 rich_text: Some(pb::msg::RichText {
                     elems,
+                    ptt,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -103,6 +105,7 @@ impl super::super::super::Engine {
         &self,
         target: i64,
         elems: Vec<pb::msg::Elem>,
+        ptt: Option<pb::msg::Ptt>,
         seq: i32,
         ran: i32,
         time: i64,
@@ -128,6 +131,7 @@ impl super::super::super::Engine {
             msg_body: Some(pb::msg::MessageBody {
                 rich_text: Some(pb::msg::RichText {
                     elems,
+                    ptt,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -195,7 +199,7 @@ impl super::super::super::Engine {
         self.uni_packet("MessageSvc.PbGetGroupMsg", req.to_bytes())
     }
 
-    pub fn build_private_recall_packet(
+    pub fn build_friend_recall_packet(
         &self,
         uin: i64,
         msg_time: i64,

@@ -11,18 +11,23 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use rs_qq::device::Device;
 use rs_qq::ext::common::after_login;
 use rs_qq::handler::DefaultHandler;
-use rs_qq::msg::MessageChain;
+use rs_qq::structs::ExtOnlineStatus;
 use rs_qq::version::{get_version, Protocol};
 use rs_qq::{Client, LoginDeviceLocked, LoginNeedCaptcha, LoginSuccess};
 use rs_qq::{LoginResponse, LoginUnknownStatus};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
-                .without_time(),
+                .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
+                    time::UtcOffset::__from_hms_unchecked(8, 0, 0),
+                    time::macros::format_description!(
+                        "[year repr:last_two]-[month]-[day] [hour]:[minute]:[second]"
+                    ),
+                )),
         )
         .with(
             tracing_subscriber::filter::Targets::new()
@@ -144,7 +149,7 @@ async fn main() -> Result<()> {
             .expect("failed to reload friend list");
         tracing::info!("{:?}", client.friends.read().await);
         client
-            .reload_groups()
+            .reload_groups(50)
             .await
             .expect("failed to reload group list");
         let group_list = client.groups.read().await;
@@ -154,15 +159,20 @@ async fn main() -> Result<()> {
     tracing::info!("{:?}", d);
 
     // 等一下，收到 ConfigPushSvc.PushReq 才可以发
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    let img_bytes = tokio::fs::read("test.png").await.unwrap();
-    let group_image = client
-        .upload_group_image(982166018, img_bytes, "a.png".into())
-        .await
-        .unwrap();
-    let mut chain = MessageChain::default();
-    chain.push(group_image);
-    client.send_group_message(982166018, chain).await.ok();
+    // use rs_qq::msg::MessageChain;
+    // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // let img_bytes = tokio::fs::read("test.png").await.unwrap();
+    // let group_image = client
+    //     .upload_group_image(982166018, img_bytes)
+    //     .await
+    //     .unwrap();
+    // let mut chain = MessageChain::default();
+    // chain.push(group_image);
+    // client.send_group_message(982166018, chain).await.ok();
+    let aaa = client
+        .update_online_status(ExtOnlineStatus::StudyOnline)
+        .await;
+    println!("{:?}", aaa);
 
     // client.delete_essence_message(1095020555, 8114, 2107692422).await
     // let mem_info = client.get_group_member_info(335783090, 875543543).await;

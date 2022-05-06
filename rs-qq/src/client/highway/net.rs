@@ -5,11 +5,11 @@ use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
-use rq_engine::highway::BdhInput;
-use rq_engine::{RQError, RQResult};
-
 use crate::client::highway::codec::HighwayCodec;
 use crate::client::highway::HighwayFrame;
+use crate::engine::command::common::PbToBytes;
+use crate::engine::highway::BdhInput;
+use crate::engine::{pb, RQError, RQResult};
 use crate::Client;
 
 impl Client {
@@ -20,29 +20,39 @@ impl Client {
         let sum = md5::compute(&input.body).to_vec();
         let length = input.body.len();
 
-        stream
-            .send(HighwayFrame {
-                head: self.highway_session.read().await.build_heartbreak(),
-                body: Bytes::new(),
-            })
-            .await?;
-        let _ = read_response(&mut stream).await?;
-        let mut ticket = input.ticket;
-        let mut rsp_ext = Bytes::new();
-        const CHUNK_SIZE: usize = 256 * 1024; // 256K
-        for (i, chunk) in input.body.chunks(CHUNK_SIZE).enumerate() {
-            let chunk = chunk.to_vec();
-            let head = self.highway_session.read().await.build_bdh_head(
-                input.command_id,
-                length as i64,
-                &chunk,
-                (i * CHUNK_SIZE) as i64,
-                ticket.clone(),
-                sum.clone(),
-            );
+        if input.send_echo {
             stream
                 .send(HighwayFrame {
-                    head,
+                    head: self.highway_session.read().await.build_heartbreak(),
+                    body: Bytes::new(),
+                })
+                .await?;
+            let _ = read_response(&mut stream).await?;
+        }
+        let mut ticket = input.ticket;
+        let mut rsp_ext = Bytes::new();
+        for (i, chunk) in input.body.chunks(input.chunk_size).enumerate() {
+            let chunk = chunk.to_vec();
+            let head = pb::ReqDataHighwayHead {
+                msg_basehead: Some(self.highway_session.read().await.build_basehead(
+                    "PicUp.DataUp".into(),
+                    4096,
+                    input.command_id,
+                    2052,
+                )),
+                msg_seghead: Some(self.highway_session.read().await.build_seghead(
+                    length as i64,
+                    (i * input.chunk_size) as i64,
+                    &chunk,
+                    ticket.clone(),
+                    sum.clone(),
+                )),
+                req_extendinfo: input.ext.clone(),
+                ..Default::default()
+            };
+            stream
+                .send(HighwayFrame {
+                    head: head.to_bytes(),
                     body: Bytes::from(chunk.clone()),
                 })
                 .await?;

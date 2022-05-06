@@ -9,6 +9,7 @@ pub mod config_push_svc;
 pub mod message_svc;
 pub mod online_push;
 pub mod reg_prxy_svc;
+pub mod stat_svc;
 pub mod wtlogin;
 
 macro_rules! log_error {
@@ -119,6 +120,24 @@ impl super::Client {
                         .unwrap();
                     cli.process_push_trans(online_push_trans).await;
                 }
+                "MessageSvc.PushForceOffline" => {
+                    let offline = cli
+                        .engine
+                        .read()
+                        .await
+                        .decode_force_offline(pkt.body)
+                        .unwrap();
+                    cli.process_push_force_offline(offline).await;
+                }
+                "StatSvc.ReqMSFOffline" => {
+                    let offline = cli
+                        .engine
+                        .read()
+                        .await
+                        .decode_msf_force_offline(pkt.body)
+                        .unwrap();
+                    cli.process_msf_force_offline(offline).await;
+                }
                 "OnlinePush.PbC2CMsgSync" => {
                     // 其他设备发送消息，同步
                     let push = cli
@@ -130,6 +149,12 @@ impl super::Client {
                     log_error!(
                         cli.process_c2c_sync(pkt.seq_id, push).await,
                         "process group message part error: {:?}"
+                    )
+                }
+                "OnlinePush.SidTicketExpired" => {
+                    log_error!(
+                        cli.process_sid_ticket_expired(pkt.seq_id).await,
+                        "process_sid_ticket_expired error: {:?}"
                     )
                 }
                 "RegPrxySvc.GetMsgV2"

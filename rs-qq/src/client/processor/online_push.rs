@@ -4,24 +4,23 @@ use bytes::{Buf, Bytes};
 use cached::Cached;
 use futures::{stream, StreamExt};
 
-use rq_engine::command::common::PbToBytes;
-use rq_engine::command::online_push::{OnlinePushTrans, PushTransInfo};
-use rq_engine::msg::MessageChain;
-use rq_engine::pb::msg;
-use rq_engine::structs::{
-    DeleteFriend, FriendInfo, FriendMessageRecall, FriendPoke, GroupLeave, GroupMessage,
-    GroupMessageRecall, GroupMute, GroupNameUpdate, NewMember,
-};
-use rq_engine::{jce, pb};
-
 use crate::client::event::{
-    DeleteFriendEvent, FriendMessageRecallEvent, FriendPokeEvent, GroupLeaveEvent,
-    GroupMessageEvent, GroupMessageRecallEvent, GroupMuteEvent, GroupNameUpdateEvent,
-    MemberPermissionChangeEvent, NewFriendEvent, NewMemberEvent,
+    DeleteFriendEvent, FriendMessageRecallEvent, FriendPokeEvent, GroupAudioMessageEvent,
+    GroupLeaveEvent, GroupMessageEvent, GroupMessageRecallEvent, GroupMuteEvent,
+    GroupNameUpdateEvent, MemberPermissionChangeEvent, NewFriendEvent, NewMemberEvent,
 };
 use crate::client::handler::QEvent;
 use crate::client::Client;
+use crate::engine::command::common::PbToBytes;
 use crate::engine::command::online_push::GroupMessagePart;
+use crate::engine::command::online_push::{OnlinePushTrans, PushTransInfo};
+use crate::engine::msg::MessageChain;
+use crate::engine::pb::msg;
+use crate::engine::structs::{
+    DeleteFriend, FriendInfo, FriendMessageRecall, FriendPoke, GroupAudio, GroupAudioMessage,
+    GroupLeave, GroupMessage, GroupMessageRecall, GroupMute, GroupNameUpdate, NewMember,
+};
+use crate::engine::{jce, pb};
 use crate::{RQError, RQResult};
 
 impl Client {
@@ -29,8 +28,6 @@ impl Client {
         self: &Arc<Self>,
         group_message_part: GroupMessagePart,
     ) -> Result<(), RQError> {
-        // self.mark_group_message_readed(group_message_part.group_code, group_message_part.seq).await;
-
         // receipt message
         if group_message_part.from_uin == self.uin().await {
             if let Some(tx) = self
@@ -41,6 +38,25 @@ impl Client {
             {
                 let _ = tx.send(group_message_part.seq);
             }
+            return Ok(());
+        }
+
+        if let Some(ptt) = group_message_part.ptt {
+            self.handler
+                .handle(QEvent::GroupAudioMessage(GroupAudioMessageEvent {
+                    client: self.clone(),
+                    message: GroupAudioMessage {
+                        seqs: vec![group_message_part.seq],
+                        rands: vec![group_message_part.rand],
+                        group_code: group_message_part.group_code,
+                        group_name: group_message_part.group_name,
+                        group_card: group_message_part.group_card,
+                        from_uin: group_message_part.from_uin,
+                        time: group_message_part.time,
+                        audio: GroupAudio(ptt),
+                    },
+                }))
+                .await;
             return Ok(());
         }
 
@@ -89,11 +105,20 @@ impl Client {
             seqs: parts.iter().map(|p| p.seq).collect(),
             rands: parts.iter().map(|p| p.rand).collect(),
             group_code: parts.first().map(|p| p.group_code).unwrap_or_default(),
+            group_name: parts
+                .first()
+                .map(|p| p.group_name.clone())
+                .unwrap_or_default(),
+            group_card: parts
+                .first()
+                .map(|p| p.group_card.clone())
+                .unwrap_or_default(),
             from_uin: parts.first().map(|p| p.from_uin).unwrap_or_default(),
             time: parts.first().map(|p| p.time).unwrap_or_default(),
             elements: MessageChain::from(
                 parts
-                    .into_iter().flat_map(|p| p.elems)
+                    .into_iter()
+                    .flat_map(|p| p.elems)
                     .collect::<Vec<msg::Elem>>(),
             ),
         };
@@ -310,8 +335,12 @@ impl Client {
                                         .map(|m| m.join_time)
                                         .max()
                                         .unwrap_or_default();
-                                    if let Ok(refreshed_members) =
-                                        self.get_group_member_list(group.info.code).await
+                                    if let Ok(refreshed_members) = self
+                                        .get_group_member_list(
+                                            group.info.code,
+                                            group.info.owner_uin,
+                                        )
+                                        .await
                                     {
                                         let mut members = group.members.write().await;
                                         members.clear();
@@ -427,6 +456,13 @@ impl Client {
         if let Some(msg) = push.msg {
             self.process_message_sync(vec![msg]).await;
         }
+        Ok(())
+    }
+
+    pub(crate) async fn process_sid_ticket_expired(self: &Arc<Self>, seq: i32) -> RQResult<()> {
+        self.request_change_sig(Some(3554528)).await?;
+        self.register_client().await?;
+        self.send_sid_ticket_expired_response(seq).await?;
         Ok(())
     }
 }
