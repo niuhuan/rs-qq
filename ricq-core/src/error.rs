@@ -12,6 +12,12 @@ pub enum RQError {
     #[error("failed to decode, {0}")]
     Decode(String),
 
+    #[error("failed to decode_prost, {0}")]
+    PbDecode(#[from] prost::DecodeError),
+
+    #[error("empty field, {0}")]
+    EmptyField(&'static str),
+
     #[error("From utf-8 error {0}")]
     Utf8(#[from] std::string::FromUtf8Error),
 
@@ -43,9 +49,13 @@ pub enum RQError {
     PacketDropped,
     #[error("session expired")]
     SessionExpired,
-    #[error("session expired, {0}")]
+    #[error("unsuccessful ret code: {0}")]
     UnsuccessfulRetCode(i32),
 
     #[error("Token login failed")]
     TokenLoginFailed,
+    #[error("failed to get file count")]
+    GetFileCountFailed,
+    #[error("failed to get file list: {0}")]
+    GetFileListFailed(String),
 }

@@ -91,10 +91,11 @@ impl super::Client {
         dst_language: String,
         src_text_list: Vec<String>,
     ) -> RQResult<Vec<String>> {
+        let list_len = src_text_list.len();
         let req = self.engine.read().await.build_translate_request_packet(
             src_language,
             dst_language,
-            src_text_list.clone(),
+            src_text_list,
         );
         let resp = self.send_and_wait(req).await?;
         let translations = self
@@ -102,7 +103,7 @@ impl super::Client {
             .read()
             .await
             .decode_translate_response(resp.body)?;
-        if translations.len() != src_text_list.len() {
+        if translations.len() != list_len {
             return Err(RQError::Other("translate length error".into()));
         }
         Ok(translations)
@@ -317,7 +318,7 @@ impl super::Client {
             .await?;
         let resid = rsp.msg_resid;
         if self.highway_session.read().await.session_key.is_empty() {
-            return Err(RQError::Other("highway_session_key is empty".into()));
+            return Err(RQError::EmptyField("highway_session_key is empty"));
         }
         let addrs: Vec<RQAddr> = rsp
             .uint32_up_ip
@@ -336,11 +337,11 @@ impl super::Client {
                     addr.into(),
                     BdhInput {
                         command_id: 27,
-                        body: body.clone(),
                         ticket: rsp.msg_sig.clone(),
                         chunk_size: 8192 * 8,
                         ..Default::default()
                     },
+                    &body,
                 )
                 .await
             {
@@ -379,8 +380,8 @@ impl super::Client {
         let prefix=if let Some(pb::multimsg::ExternMsg { channel_type }) = resp.msg_extern_info && channel_type == 2 {
             "https://ssl.htdata.qq.com".into()
         } else {
-            let addr = SocketAddr::from(RQAddr(resp.down_ip.pop().ok_or_else(||RQError::Other("ip is empty".into()))?,resp.down_port.pop().ok_or_else(||RQError::Other("port is empty".into()))? as u16));
-            format!("http://{}", addr)
+            let addr = SocketAddr::from(RQAddr(resp.down_ip.pop().ok_or(RQError::EmptyField("down_ip"))?,resp.down_port.pop().ok_or(RQError::EmptyField("down_port"))? as u16));
+            format!("http://{addr}")
         };
         let _url = format!(
             "{}{}",

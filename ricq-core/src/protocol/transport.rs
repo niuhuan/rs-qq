@@ -161,7 +161,7 @@ impl Transport {
         match ret_code {
             0 => {}
             -10008 => return Err(RQError::SessionExpired),
-            _ => return Err(RQError::UnsuccessfulRetCode(ret_code)),
+            other => return Err(RQError::UnsuccessfulRetCode(other)),
         }
         pkt.message = head.read_string();
         pkt.command_name = head.read_string();
@@ -184,9 +184,7 @@ impl Transport {
 
         if compress_flag == 1 {
             let mut uncompressed = Vec::new();
-            ZlibDecoder::new(body.chunk())
-                .read_to_end(&mut uncompressed)
-                .map_err(|_| RQError::Other("failed to decode zlib".into()))?;
+            ZlibDecoder::new(body.chunk()).read_to_end(&mut uncompressed)?;
             body = Bytes::from(uncompressed)
         }
 

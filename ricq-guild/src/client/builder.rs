@@ -2,7 +2,6 @@ use crate::protocol::protobuf;
 use dynamic_protobuf::{dynamic_message, DynamicMessage};
 use rand::Rng;
 use ricq_core::command::common::PbToBytes;
-use ricq_core::msg::MessageChain;
 use ricq_core::protocol::packet::Packet;
 use std::sync::atomic::Ordering;
 
@@ -99,5 +98,46 @@ impl<'a> super::Engine<'a> {
             }
             .encode(),
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_guild_image_store_packet(
+        &self,
+        channel_id: u64,
+        guild_code: u64,
+        file_name: String,
+        md5: Vec<u8>,
+        size: u64,
+        width: u32,
+        height: u32,
+        image_type: u32,
+    ) -> Packet {
+        let req = ricq_core::pb::cmd0x388::D388ReqBody {
+            net_type: Some(3),
+            subcmd: Some(1),
+            // TODO 支持多张图片？
+            tryup_img_req: vec![ricq_core::pb::cmd0x388::TryUpImgReq {
+                group_code: Some(channel_id),
+                src_uin: Some(self.uin() as u64),
+                file_id: Some(0),
+                file_md5: Some(md5),
+                file_size: Some(size),
+                file_name: Some(file_name.into_bytes()),
+                src_term: Some(5),
+                platform_type: Some(9),
+                bu_type: Some(211),
+                pic_type: Some(image_type),
+                pic_width: Some(width),
+                pic_height: Some(height),
+                build_ver: Some(self.transport.version.build_ver.as_bytes().to_vec()),
+                app_pic_type: Some(1050),
+                qqmeet_guild_id: Some(guild_code),
+                qqmeet_channel_id: Some(channel_id),
+                ..Default::default()
+            }],
+            command_id: Some(83),
+            ..Default::default()
+        };
+        self.uni_packet("ImgStore.QQMeetPicUp", req.to_bytes())
     }
 }

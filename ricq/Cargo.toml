@@ -1,9 +1,9 @@
 [package]
 name = "ricq"
-version = "0.1.16"
+version = "0.1.20"
 edition = "2021"
 description = "Android IM protocol"
-license = "AGPL-3.0"
+license = "MPL-2.0"
 homepage = "https://github.com/lz1998/ricq"
 repository = "https://github.com/lz1998/ricq"
 readme = "README.md"
@@ -11,22 +11,22 @@ keywords = ["qq", "protocol", "android", "mirai"]
 
 [features]
 default = []
-img-detail = ["image"]
+image-detail = ["image"]
 
 [dependencies]
-ricq-core = { version = "0.1.16", path = "../ricq-core" }
+ricq-core = { version = "=0.1.20", path = "../ricq-core" }
 async-trait = "0.1"
 bytes = "1"
-cached = { version = "0.30", features = ["async"], default-features = false }
+cached = { version = "0.35", default-features = false }
 derivative = "2"
 flate2 = { version = "1", features = ["rust_backend"], default-features = false }
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
 image = { version = "0.24", optional = true }
 jcers = "0.1"
 md5 = "0.7"
 prost = { version = "0.9", features = ["std"], default-features = false }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "time"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"

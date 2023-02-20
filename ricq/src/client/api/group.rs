@@ -3,11 +3,11 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use bytes::Bytes;
 use cached::Cached;
+use prost::Message;
 
 use ricq_core::command::common::PbToBytes;
 use ricq_core::command::img_store::GroupImageStoreResp;
 use ricq_core::command::multi_msg::gen_forward_preview;
-use ricq_core::command::oidb_svc::music::{MusicShare, MusicType, SendMusicTarget};
 use ricq_core::command::{friendlist::*, oidb_svc::*, profile_service::*};
 use ricq_core::common::group_code2uin;
 use ricq_core::hex::encode_hex;
@@ -16,7 +16,7 @@ use ricq_core::msg::elem::{Anonymous, GroupImage, RichMsg, VideoFile};
 use ricq_core::msg::MessageChain;
 use ricq_core::pb;
 use ricq_core::pb::short_video::ShortVideoUploadRsp;
-use ricq_core::structs::{ForwardMessage, MessageNode};
+use ricq_core::structs::{ForwardMessage, GroupFileCount, GroupFileList, MessageNode};
 use ricq_core::structs::{GroupAudio, GroupMemberPermission};
 use ricq_core::structs::{GroupInfo, GroupMemberInfo, MessageReceipt};
 
@@ -254,7 +254,7 @@ impl super::super::Client {
                 ._get_group_member_list(group_code, next_uin, group_owner_uin)
                 .await?;
             if resp.list.is_empty() {
-                return Err(RQError::Other("member list is empty".to_string()));
+                return Err(RQError::EmptyField("GroupMemberListResponse.list"));
             }
             for m in resp.list.iter_mut() {
                 m.group_code = group_code;
@@ -435,13 +435,28 @@ impl super::super::Client {
         &self,
         group_code: i64,
         music_share: MusicShare,
-        music_type: MusicType,
+        music_version: MusicVersion,
     ) -> RQResult<()> {
         let req = self.engine.read().await.build_share_music_request_packet(
-            SendMusicTarget::Group(group_code),
+            ShareTarget::Group(group_code),
             music_share,
-            music_type.version(),
+            music_version,
         );
+        let _ = self.send_and_wait(req).await?;
+        Ok(())
+    }
+
+    /// 分享链接
+    pub async fn send_group_link_share(
+        &self,
+        group_code: i64,
+        link_share: LinkShare,
+    ) -> RQResult<()> {
+        let req = self
+            .engine
+            .read()
+            .await
+            .build_share_link_request_packet(ShareTarget::Group(group_code), link_share);
         let _ = self.send_and_wait(req).await?;
         Ok(())
     }
@@ -482,12 +497,10 @@ impl super::super::Client {
     pub async fn get_group_image_store(
         &self,
         group_code: i64,
-        guild_code: Option<u64>,
         image_info: &ImageInfo,
     ) -> RQResult<GroupImageStoreResp> {
         let req = self.engine.read().await.build_group_image_store_packet(
             group_code,
-            guild_code,
             image_info.filename.clone(),
             image_info.md5.clone(),
             image_info.size as u64,
@@ -502,52 +515,16 @@ impl super::super::Client {
             .decode_group_image_store_response(resp.body)
     }
 
-    pub async fn _upload_common_group_image(
-        &self,
-        upload_key: Vec<u8>,
-        addr: std::net::SocketAddr,
-        data: Vec<u8>,
-    ) -> RQResult<()> {
-        if self.highway_session.read().await.session_key.is_empty() {
-            return Err(RQError::Other("highway_session_key is empty".into()));
-        }
-        self.highway_upload_bdh(
-            addr,
-            BdhInput {
-                command_id: 2,
-                body: data,
-                ticket: upload_key,
-                ext: vec![],
-                encrypt: false,
-                chunk_size: 256 * 1024,
-                send_echo: true,
-            },
-        )
-        .await?;
-        Ok(())
-    }
-
-    pub async fn upload_group_image(&self, group_code: i64, data: Vec<u8>) -> RQResult<GroupImage> {
-        self.upload_common_group_image(group_code, None, data).await
-    }
-
     /// 上传群图片
-    pub async fn upload_common_group_image(
-        &self,
-        common_code: i64,
-        guild_code: Option<u64>,
-        data: Vec<u8>,
-    ) -> RQResult<GroupImage> {
+    pub async fn upload_group_image(&self, group_code: i64, data: &[u8]) -> RQResult<GroupImage> {
         let image_info = ImageInfo::try_new(&data)?;
 
-        let image_store = self
-            .get_group_image_store(common_code, guild_code, &image_info)
-            .await?;
+        let image_store = self.get_group_image_store(group_code, &image_info).await?;
         let signature = self.highway_session.read().await.session_key.to_vec();
         let group_image = match image_store {
             GroupImageStoreResp::Exist { file_id, addrs } => image_info.into_group_image(
                 file_id,
-                addrs.first().cloned().unwrap_or_default(),
+                addrs.first().copied().unwrap_or_default(),
                 signature,
             ),
             GroupImageStoreResp::NotExist {
@@ -556,13 +533,24 @@ impl super::super::Client {
                 mut upload_addrs,
             } => {
                 let addr = match self.highway_addrs.read().await.first() {
-                    Some(addr) => addr.clone(),
+                    Some(addr) => *addr,
                     None => upload_addrs
                         .pop()
-                        .ok_or_else(|| RQError::Other("addrs is empty".into()))?,
+                        .ok_or(RQError::EmptyField("upload_addrs"))?,
                 };
-                self._upload_common_group_image(upload_key, addr.clone().into(), data)
-                    .await?;
+                self.highway_upload_bdh(
+                    addr.into(),
+                    BdhInput {
+                        command_id: 2,
+                        ticket: upload_key,
+                        ext: vec![],
+                        encrypt: false,
+                        chunk_size: 256 * 1024,
+                        send_echo: true,
+                    },
+                    data,
+                )
+                .await?;
                 image_info.into_group_image(file_id, addr, signature)
             }
         };
@@ -573,7 +561,7 @@ impl super::super::Client {
     pub async fn upload_group_audio(
         &self,
         group_code: i64,
-        data: Vec<u8>,
+        data: &[u8],
         codec: u32,
     ) -> RQResult<GroupAudio> {
         let md5 = md5::compute(&data).to_vec();
@@ -590,8 +578,8 @@ impl super::super::Client {
             .read()
             .await
             .first()
-            .cloned()
-            .ok_or_else(|| RQError::Other("highway_addrs is empty".into()))?;
+            .copied()
+            .ok_or(RQError::EmptyField("highway_addrs"))?;
         let ticket = self
             .highway_session
             .read()
@@ -604,13 +592,13 @@ impl super::super::Client {
                 addr.into(),
                 BdhInput {
                     command_id: 29,
-                    body: data,
                     ticket,
                     ext: ext.to_vec(),
                     encrypt: false,
                     chunk_size: 256 * 1024,
                     send_echo: true,
                 },
+                data,
             )
             .await?;
         let file_key = self
@@ -638,10 +626,7 @@ impl super::super::Client {
     ) -> RQResult<String> {
         let req = self.engine.read().await.build_group_ptt_down_req(
             group_code,
-            audio
-                .0
-                .file_md5
-                .ok_or_else(|| RQError::Other("file_md5 is none".into()))?,
+            audio.0.file_md5.ok_or(RQError::EmptyField("file_md5"))?,
         );
         let resp = self.send_and_wait(req).await?;
         self.engine.read().await.decode_group_ptt_down(resp.body)
@@ -669,8 +654,8 @@ impl super::super::Client {
     pub async fn upload_group_short_video(
         &self,
         group_code: i64,
-        video_data: Vec<u8>,
-        thumb_data: Vec<u8>,
+        video_data: &[u8],
+        thumb_data: &[u8],
     ) -> RQResult<VideoFile> {
         let video_md5 = md5::compute(&video_data).to_vec();
         let thumb_md5 = md5::compute(&thumb_data).to_vec();
@@ -683,9 +668,9 @@ impl super::super::Client {
             video_size as i64,
             thumb_size as i64,
         );
-        let video_store = self
-            .get_group_short_video_store(short_video_up_req.clone())
-            .await?;
+        let ext = short_video_up_req.to_bytes().to_vec();
+
+        let video_store = self.get_group_short_video_store(short_video_up_req).await?;
 
         if video_store.file_exists == 1 {
             return Ok(VideoFile {
@@ -703,31 +688,32 @@ impl super::super::Client {
             .read()
             .await
             .first()
-            .ok_or_else(|| RQError::Other("addrs is empty".into()))?
-            .clone();
+            .copied()
+            .ok_or(RQError::EmptyField("highway_addrs"))?;
 
         if self.highway_session.read().await.session_key.is_empty() {
-            return Err(RQError::Other("highway_session_key is empty".into()));
+            return Err(RQError::EmptyField("highway_session_key"));
         }
         let ticket = self.highway_session.read().await.sig_session.to_vec();
-        let mut data = thumb_data;
-        data.extend(video_data);
+        let mut data = Vec::with_capacity(thumb_size + video_size);
+        data.copy_from_slice(thumb_data);
+        data[thumb_size..].copy_from_slice(video_data);
 
         let rsp = self
             .highway_upload_bdh(
                 addr.into(),
                 BdhInput {
                     command_id: 25,
-                    body: data,
                     ticket,
-                    ext: short_video_up_req.to_bytes().to_vec(),
+                    ext,
                     encrypt: true,
                     chunk_size: 256 * 1024,
                     send_echo: true,
                 },
+                &data,
             )
             .await?;
-        let rsp = pb::short_video::ShortVideoUploadRsp::from_bytes(&rsp)
+        let rsp = pb::short_video::ShortVideoUploadRsp::decode(&*rsp)
             .map_err(|_| RQError::Decode("ShortVideoUploadRsp".into()))?;
         Ok(VideoFile {
             name: format!("{}.mp4", encode_hex(&video_md5)),
@@ -870,5 +856,71 @@ impl super::super::Client {
             .build_group_sign_in_packet(group_code);
         self.send_and_wait(req).await?;
         Ok(())
+    }
+    // 获取群文件列表
+    pub async fn get_group_file_list(
+        &self,
+        group_code: u64,
+        folder_id: &str,
+        start_index: u32,
+    ) -> RQResult<GroupFileList> {
+        let req = self
+            .engine
+            .read()
+            .await
+            .build_group_file_list_request_packet(group_code, folder_id.into(), start_index);
+        let resp = self.send_and_wait(req).await?;
+        self.engine
+            .read()
+            .await
+            .decode_group_file_list_response(resp.body)
+    }
+
+    /// 获取群文件总数
+    pub async fn get_group_files_count(&self, group_code: u64) -> RQResult<GroupFileCount> {
+        let req = self
+            .engine
+            .read()
+            .await
+            .build_group_file_count_request_packet(group_code);
+        let resp = self.send_and_wait(req).await?;
+        self.engine
+            .read()
+            .await
+            .decode_group_file_count_response(resp.body)
+    }
+    /// 获取文件下载链接
+    /// # Examples
+    /// ```
+    /// let file_list = client.get_group_file_list(group_code, "/", 0).await.unwrap();
+    /// for item_info in file_list.items {
+    ///     let url = client
+    ///         .get_group_file_download(
+    ///             group_code,
+    ///             &item_info.file_info.file_id,
+    ///             item_info.file_info.bus_id,
+    ///             &item_info.file_info.file_name,
+    ///         )
+    ///         .await;
+    ///     println!("{:?}", url);
+    /// }
+    ///```
+    pub async fn get_group_file_download(
+        &self,
+        group_code: i64,
+        file_id: &str,
+        bus_id: u32,
+        file_name: &str,
+    ) -> RQResult<String> {
+        let req = self
+            .engine
+            .read()
+            .await
+            .build_group_file_download_request_packet(group_code, file_id.into(), bus_id as i32);
+        let resp = self.send_and_wait(req).await?;
+        self.engine
+            .read()
+            .await
+            .decode_group_file_download_response(resp.body, file_name)
     }
 }

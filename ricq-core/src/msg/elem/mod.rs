@@ -53,7 +53,7 @@ pub enum RQElem {
 
 impl From<msg::elem::Elem> for RQElem {
     fn from(elem: msg::elem::Elem) -> Self {
-        match elem.clone() {
+        match elem {
             msg::elem::Elem::Text(e) => {
                 // TODO guild at
                 if !e.attr6_buf().is_empty() {
@@ -63,7 +63,7 @@ impl From<msg::elem::Elem> for RQElem {
                 }
             }
             msg::elem::Elem::Face(e) => RQElem::Face(face::Face::from(e)),
-            msg::elem::Elem::CommonElem(e) => match e.service_type() {
+            msg::elem::Elem::CommonElem(ref e) => match e.service_type() {
                 // TODO image
                 3 => {
                     if let Ok(flash) = msg::MsgElemInfoServtype3::decode(e.pb_elem()) {
@@ -88,13 +88,12 @@ impl From<msg::elem::Elem> for RQElem {
                 _ => RQElem::Other(Box::new(elem)),
             },
             msg::elem::Elem::MarketFace(e) => {
-                let f = market_face::MarketFace::from(e);
-                if f.name == "[骰子]" || f.name == "[随机骰子]" {
-                    RQElem::Dice(market_face::Dice::from(f))
-                } else if f.name == "[猜拳]" {
-                    RQElem::FingerGuessing(market_face::FingerGuessing::from(f))
-                } else {
-                    RQElem::MarketFace(f)
+                let face = MarketFace::from(e);
+                match face.name.as_str() {
+                    // 从商城添加的会显示为“随机骰子”，但在遥远的曾经收藏的表情，会显示为“骰子”
+                    "[骰子]" | "[随机骰子]" => RQElem::Dice(Dice::from(face)),
+                    "[猜拳]" => RQElem::FingerGuessing(FingerGuessing::from(face)),
+                    _ => RQElem::MarketFace(face),
                 }
             }
             msg::elem::Elem::LightApp(e) => RQElem::LightApp(light_app::LightApp::from(e)),
@@ -110,7 +109,7 @@ impl From<msg::elem::Elem> for RQElem {
 }
 
 impl fmt::Display for RQElem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RQElem::At(e) => fmt::Display::fmt(e, f),
             RQElem::Text(e) => fmt::Display::fmt(e, f),
@@ -118,9 +117,30 @@ impl fmt::Display for RQElem {
             RQElem::GroupImage(e) => fmt::Display::fmt(e, f),
             RQElem::FriendImage(e) => fmt::Display::fmt(e, f),
             RQElem::FlashImage(e) => fmt::Display::fmt(e, f),
-            _ => write!(f, ""),
-        }
+            RQElem::LightApp(e) => fmt::Display::fmt(e, f),
+            RQElem::RichMsg(e) => fmt::Display::fmt(e, f),
+            _ => return Ok(()),
+        }?;
+        f.write_str(" ")
     }
+}
+
+/// Extract a field from xml / json and write to formatter.
+fn fmt_extract_attr(
+    f: &mut fmt::Formatter,
+    i: &str,
+    name: &str,
+    begin: &str,
+    end: &str,
+) -> fmt::Result {
+    if let Some(v) = i
+        .rsplit_once(begin)
+        .and_then(|v| v.1.split_once(end))
+        .map(|v| v.0)
+    {
+        write!(f, " {name}='{v}'")?;
+    }
+    Ok(())
 }
 
 macro_rules! impl_from {

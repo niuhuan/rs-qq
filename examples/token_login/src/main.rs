@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Result;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use tracing::Level;
@@ -12,7 +11,7 @@ use ricq::handler::DefaultHandler;
 use ricq::{Client, Device, Protocol};
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
@@ -37,7 +36,7 @@ async fn main() -> Result<()> {
     let token: Token = serde_json::from_str(&token).expect("failed to parse token");
     let device = Device::random_with_rng(&mut StdRng::seed_from_u64(token.uin as u64));
 
-    let client = Arc::new(Client::new(device, Protocol::IPad, DefaultHandler));
+    let client = Arc::new(Client::new(device, Protocol::IPad.into(), DefaultHandler));
 
     let handle = tokio::spawn({
         let client = client.clone();
@@ -67,5 +66,4 @@ async fn main() -> Result<()> {
     tracing::info!("{:?}", d);
 
     handle.await.unwrap();
-    Ok(())
 }

@@ -1,9 +1,9 @@
 [package]
 name = "ricq-core"
-version = "0.1.16"
+version = "0.1.20"
 edition = "2021"
 description = "Packet encoders and decoders for ricq"
-license = "AGPL-3.0"
+license = "MPL-2.0"
 homepage = "https://github.com/lz1998/ricq"
 repository = "https://github.com/lz1998/ricq"
 keywords = ["qq", "protocol", "android", "mirai"]
@@ -12,7 +12,7 @@ keywords = ["qq", "protocol", "android", "mirai"]
 byteorder = "1"
 bytes = "1"
 derivative = "2"
-flate2 = { version = "1", features = ["rust_backend"], default-features = false }
+flate2 = "1"
 generic-array = "0.14"
 jcers = { version = "0.1", features = ["derive"] }
 md5 = "0.7"

@@ -3,7 +3,7 @@ use std::time::Duration;
 use bytes::BufMut;
 
 use ricq_core::command::long_conn::OffPicUpResp;
-use ricq_core::command::oidb_svc::music::{MusicShare, MusicType, SendMusicTarget};
+use ricq_core::command::oidb_svc::{LinkShare, MusicShare, MusicVersion, ShareTarget};
 use ricq_core::command::{friendlist::*, profile_service::*};
 use ricq_core::hex::encode_hex;
 use ricq_core::highway::BdhInput;
@@ -190,7 +190,7 @@ impl super::super::Client {
         .await
     }
 
-    pub async fn upload_friend_image(&self, target: i64, data: Vec<u8>) -> RQResult<FriendImage> {
+    pub async fn upload_friend_image(&self, target: i64, data: &[u8]) -> RQResult<FriendImage> {
         let image_info = ImageInfo::try_new(&data)?;
         let image_store = self.get_off_pic_store(target, &image_info).await?;
 
@@ -203,42 +203,28 @@ impl super::super::Client {
                 mut upload_addrs,
             } => {
                 let addr = match self.highway_addrs.read().await.first() {
-                    Some(addr) => addr.clone(),
+                    Some(addr) => *addr,
                     None => upload_addrs
                         .pop()
-                        .ok_or_else(|| RQError::Other("addrs is empty".into()))?,
+                        .ok_or(RQError::EmptyField("upload_addrs"))?,
                 };
-                self._upload_friend_image(upload_key, addr.into(), data)
-                    .await?;
+                self.highway_upload_bdh(
+                    addr.into(),
+                    BdhInput {
+                        command_id: 1,
+                        ticket: upload_key,
+                        ext: vec![],
+                        encrypt: false,
+                        chunk_size: 256 * 1024,
+                        send_echo: true,
+                    },
+                    data,
+                )
+                .await?;
                 image_info.into_friend_image(res_id, uuid)
             }
         };
         Ok(friend_image)
-    }
-
-    pub async fn _upload_friend_image(
-        &self,
-        upload_key: Vec<u8>,
-        addr: std::net::SocketAddr,
-        data: Vec<u8>,
-    ) -> RQResult<()> {
-        if self.highway_session.read().await.session_key.is_empty() {
-            return Err(RQError::Other("highway_session_key is empty".into()));
-        }
-        self.highway_upload_bdh(
-            addr,
-            BdhInput {
-                command_id: 1,
-                body: data,
-                ticket: upload_key,
-                ext: vec![],
-                encrypt: false,
-                chunk_size: 256 * 1024,
-                send_echo: true,
-            },
-        )
-        .await?;
-        Ok(())
     }
 
     pub async fn get_off_pic_store(
@@ -267,13 +253,24 @@ impl super::super::Client {
         &self,
         uin: i64,
         music_share: MusicShare,
-        music_type: MusicType,
+        music_version: MusicVersion,
     ) -> RQResult<()> {
         let req = self.engine.read().await.build_share_music_request_packet(
-            SendMusicTarget::Friend(uin),
+            ShareTarget::Friend(uin),
             music_share,
-            music_type.version(),
+            music_version,
         );
+        let _ = self.send_and_wait(req).await?;
+        Ok(())
+    }
+
+    /// 分享链接
+    pub async fn send_friend_link_share(&self, uin: i64, link_share: LinkShare) -> RQResult<()> {
+        let req = self
+            .engine
+            .read()
+            .await
+            .build_share_link_request_packet(ShareTarget::Friend(uin), link_share);
         let _ = self.send_and_wait(req).await?;
         Ok(())
     }
@@ -298,7 +295,7 @@ impl super::super::Client {
     pub async fn upload_friend_audio(
         &self,
         target: i64,
-        data: Vec<u8>,
+        data: &[u8],
         audio_duration: Duration,
     ) -> RQResult<FriendAudio> {
         let md5 = md5::compute(&data).to_vec();
@@ -314,8 +311,8 @@ impl super::super::Client {
             .read()
             .await
             .first()
-            .cloned()
-            .ok_or_else(|| RQError::Other("highway_addrs is empty".into()))?;
+            .copied()
+            .ok_or(RQError::EmptyField("highway_addrs"))?;
         let ticket = self
             .highway_session
             .read()
@@ -328,13 +325,13 @@ impl super::super::Client {
                 addr.into(),
                 BdhInput {
                     command_id: 26,
-                    body: data,
                     ticket,
                     ext: ext.to_vec(),
                     encrypt: false,
                     chunk_size: 256 * 1024,
                     send_echo: true,
                 },
+                data,
             )
             .await?;
         let uuid = self
@@ -381,10 +378,7 @@ impl super::super::Client {
     ) -> RQResult<String> {
         let req = self.engine.read().await.build_c2c_ptt_down_req(
             sender_uin,
-            audio
-                .0
-                .file_uuid
-                .ok_or_else(|| RQError::Other("file_uuid is none".into()))?,
+            audio.0.file_uuid.ok_or(RQError::EmptyField("file_uuid"))?,
         );
         let resp = self.send_and_wait(req).await?;
         self.engine.read().await.decode_c2c_ptt_down(resp.body)

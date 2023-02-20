@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::time::UNIX_EPOCH;
 
-use cached::CachedAsync;
+use cached::Cached;
 use tokio::sync::{broadcast, RwLock};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
@@ -71,8 +71,8 @@ pub struct Client {
     push_trans_cache: RwLock<cached::TimedCache<(i32, i64), ()>>,
     group_sys_message_cache: RwLock<GroupSystemMessages>,
 
-    highway_session: RwLock<ricq_core::highway::Session>,
-    highway_addrs: RwLock<Vec<RQAddr>>,
+    pub highway_session: RwLock<ricq_core::highway::Session>,
+    pub highway_addrs: RwLock<Vec<RQAddr>>,
 
     packet_handler: RwLock<HashMap<String, broadcast::Sender<Packet>>>,
 }
@@ -81,17 +81,16 @@ impl super::Client {
     /// 新建 Clinet
     ///
     /// **Notice: 该方法仅新建 Client 需要调用 start 方法连接到服务器**
-    pub fn new<H, V>(device: Device, version: V, handler: H) -> Client
+    pub fn new<H>(device: Device, version: Version, handler: H) -> Client
     where
         H: crate::client::handler::Handler + 'static + Sync + Send,
-        V: Into<Version>,
     {
         let (out_pkt_sender, _) = tokio::sync::broadcast::channel(1024);
         let (disconnect_signal, _) = tokio::sync::broadcast::channel(8);
 
         Client {
             handler: Box::new(handler),
-            engine: RwLock::new(Engine::new(device, version.into())),
+            engine: RwLock::new(Engine::new(device, version)),
             status: AtomicU8::new(NetworkStatus::Unknown as u8),
             heartbeat_enabled: AtomicBool::new(false),
             online: AtomicBool::new(false),
@@ -214,8 +213,7 @@ impl super::Client {
         self.packet_handler
             .write()
             .await
-            .get_or_set_with(command.to_string(), async || broadcast::channel(10).0)
-            .await
+            .cache_get_or_set_with(command.to_string(), || broadcast::channel(10).0)
             .subscribe()
     }
 }
@@ -226,6 +224,7 @@ impl Drop for Client {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum NetworkStatus {
     // 未启动

@@ -3,6 +3,7 @@ use std::pin::Pin;
 
 use ricq_core::command::img_store::GroupImageStoreResp;
 use ricq_core::command::long_conn::OffPicUpResp;
+use ricq_core::highway::BdhInput;
 use ricq_core::msg::elem::{FriendImage, GroupImage};
 use ricq_core::{RQError, RQResult};
 
@@ -21,10 +22,7 @@ where
     ) -> Pin<Box<dyn Future<Output = RQResult<Vec<u8>>> + Send + 'a>>,
 {
     let sign = cli.get_highway_session_key().await;
-    let group_image = match cli
-        .get_group_image_store(group_code, None, &image_info)
-        .await?
-    {
+    let group_image = match cli.get_group_image_store(group_code, &image_info).await? {
         GroupImageStoreResp::Exist { file_id, addrs } => {
             image_info.into_group_image(file_id, addrs.first().cloned().unwrap_or_default(), sign)
         }
@@ -36,10 +34,21 @@ where
             let data = f(&image_info).await?;
             let addr = upload_addrs
                 .pop()
-                .ok_or_else(|| RQError::Other("addrs is empty".into()))?;
-            cli._upload_common_group_image(upload_key, addr.clone().into(), data)
-                .await
-                .map(|_| image_info.into_group_image(file_id, addr, sign))?
+                .ok_or(RQError::EmptyField("upload_addrs"))?;
+            cli.highway_upload_bdh(
+                addr.clone().into(),
+                BdhInput {
+                    command_id: 2,
+                    ticket: upload_key,
+                    ext: vec![],
+                    encrypt: false,
+                    chunk_size: 256 * 1024,
+                    send_echo: true,
+                },
+                &data,
+            )
+            .await
+            .map(|_| image_info.into_group_image(file_id, addr, sign))?
         }
     };
     Ok(group_image)
@@ -67,10 +76,21 @@ where
             let data = f(&image_info).await?;
             let addr = upload_addrs
                 .pop()
-                .ok_or_else(|| RQError::Other("addrs is empty".into()))?;
-            cli._upload_friend_image(upload_key, addr.clone().into(), data)
-                .await
-                .map(|_| image_info.into_friend_image(res_id, uuid))?
+                .ok_or(RQError::EmptyField("upload_addrs"))?;
+            cli.highway_upload_bdh(
+                addr.clone().into(),
+                BdhInput {
+                    command_id: 1,
+                    ticket: upload_key,
+                    ext: vec![],
+                    encrypt: false,
+                    chunk_size: 256 * 1024,
+                    send_echo: true,
+                },
+                &data,
+            )
+            .await
+            .map(|_| image_info.into_friend_image(res_id, uuid))?
         }
     };
     Ok(friend_image)

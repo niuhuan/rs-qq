@@ -1,12 +1,15 @@
+use std::fmt;
 use std::io::{Read, Write};
 
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 
+use super::fmt_extract_attr;
 use crate::msg::{MessageChainBuilder, PushBuilder};
 use crate::msg::{MessageElem, PushElem};
 use crate::pb::msg;
 use crate::{push_builder_impl, to_elem_vec_impl};
 
+// Some of the share card message will be a LightApp with pkg id `com.tencent.structmsg`
 #[derive(Default, Debug, Clone)]
 pub struct LightApp {
     pub content: String,
@@ -46,11 +49,24 @@ impl From<msg::LightApp> for LightApp {
             };
             if !content.is_empty() && content.len() < 1024 ^ 3 {
                 return Self {
-                    content: String::from_utf8_lossy(&content).to_string(),
+                    content: String::from_utf8_lossy(&content).into_owned(),
                 };
             }
         }
         Self::default()
+    }
+}
+
+impl fmt::Display for LightApp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("[LightApp:")?;
+        fmt_extract_attr(f, &self.content, "app", r#""app":""#, "\"")?;
+        fmt_extract_attr(f, &self.content, "prompt", r#""prompt":""#, "\"")?;
+        fmt_extract_attr(f, &self.content, "desc", r#""desc":""#, "\"")?;
+        fmt_extract_attr(f, &self.content, "url", r#""jumpUrl":""#, "\"")?;
+        fmt_extract_attr(f, &self.content, "title", r#""title":""#, "\"")?;
+        fmt_extract_attr(f, &self.content, "tag", r#""tag":""#, "\"")?;
+        f.write_str("]")
     }
 }
 

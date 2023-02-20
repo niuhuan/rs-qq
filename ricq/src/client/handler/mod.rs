@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use tokio::sync::{
     broadcast::Sender as BroadcastSender,
@@ -45,6 +48,8 @@ pub enum QEvent {
     GroupDisband(GroupDisbandEvent),
     /// 好友戳一戳
     FriendPoke(FriendPokeEvent),
+    /// 群成员戳一戳
+    GroupPoke(GroupPokeEvent),
     /// 群名称修改
     GroupNameUpdate(GroupNameUpdateEvent),
     /// 好友删除
@@ -57,12 +62,49 @@ pub enum QEvent {
     /// 服务端强制下线
     /// 不能用于掉线重连，掉线重连以 start 返回为准
     MSFOffline(MSFOfflineEvent),
+    /// 网络原因/客户端主动掉线
+    /// 可用于掉线重连
+    ClientDisconnect(ClientDisconnect),
 }
 
 /// 处理外发数据的接口
+///
+/// 同时，所有 `async fn(QEvent)` 都已自动实现 `Handler`。
+///
+/// # Examples
+///
+/// 你可以为自己的 struct 实现 Handler：
+///
+/// ```
+/// struct MyHandler;
+/// impl Handler for MyHandler { ... }
+/// ```
+///
+/// 或者只定义单个事件处理函数，更简洁：
+///
+/// ```
+/// async fn on_event(e: QEvent) {
+///     dbg!(e);
+/// }
+/// let client = Client::new(
+///     device,
+///     Protocol::MacOS.into(),
+///     on_event as fn(_) -> _,
+/// );
+/// ```
 #[async_trait]
 pub trait Handler: Sync {
     async fn handle(&self, event: QEvent);
+}
+
+// 这里还有一种 Fn(QEvent) -> Fut 的写法，但是会与 PartlyHandler 冲突
+impl<Fut> Handler for fn(QEvent) -> Fut
+where
+    Fut: Future<Output = ()> + Send,
+{
+    fn handle<'a: 'b, 'b>(&'a self, e: QEvent) -> Pin<Box<dyn Future<Output = ()> + Send + 'b>> {
+        Box::pin(async move { self(e).await })
+    }
 }
 
 /// 一个默认 Handler，只是把信息打印出来
@@ -152,11 +194,13 @@ pub trait PartlyHandler: Sync {
     async fn handle_group_leave(&self, _event: GroupLeaveEvent) {}
     async fn handle_group_disband(&self, _event: GroupDisbandEvent) {}
     async fn handle_friend_poke(&self, _event: FriendPokeEvent) {}
+    async fn handle_group_poke(&self, _event: GroupPokeEvent) {}
     async fn handle_group_name_update(&self, _event: GroupNameUpdateEvent) {}
     async fn handle_delete_friend(&self, _event: DeleteFriendEvent) {}
     async fn handle_member_permission_change(&self, _event: MemberPermissionChangeEvent) {}
     async fn handle_kicked_offline(&self, _event: KickedOfflineEvent) {}
     async fn handle_msf_offline(&self, _event: MSFOfflineEvent) {}
+    async fn handle_client_disconnect(&self, _event: ClientDisconnect) {}
 }
 
 #[async_trait]
@@ -183,11 +227,13 @@ where
             QEvent::GroupLeave(m) => self.handle_group_leave(m).await,
             QEvent::GroupDisband(m) => self.handle_group_disband(m).await,
             QEvent::FriendPoke(m) => self.handle_friend_poke(m).await,
+            QEvent::GroupPoke(m) => self.handle_group_poke(m).await,
             QEvent::GroupNameUpdate(m) => self.handle_group_name_update(m).await,
             QEvent::DeleteFriend(m) => self.handle_delete_friend(m).await,
             QEvent::MemberPermissionChange(m) => self.handle_member_permission_change(m).await,
             QEvent::KickedOffline(m) => self.handle_kicked_offline(m).await,
             QEvent::MSFOffline(m) => self.handle_msf_offline(m).await,
+            QEvent::ClientDisconnect(m) => self.handle_client_disconnect(m).await,
         }
     }
 }
